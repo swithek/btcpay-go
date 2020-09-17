@@ -124,10 +124,7 @@ func hexHash(hash hash.Hash, v string) (string, error) {
 
 // privateKey extracts a private key from the provided PEM string.
 func privateKey(pm string) (*btcec.PrivateKey, error) {
-	b, err := pem.Decode([]byte(pm))
-	if err != nil {
-		return nil, err
-	}
+	b, _ := pem.Decode([]byte(pm))
 
 	var ecpk ecPrivateKey
 

@@ -21,8 +21,8 @@ type ecPrivateKey struct {
 	PublicKey     asn1.BitString        `asn1:"optional,explicit,tag1"`
 }
 
-// GeneratePEM generates a new PEM string.
-func GeneratePEM() (string, error) {
+// generatePEM generates a new PEM string.
+func generatePEM() (string, error) {
 	priv, err := btcec.NewPrivateKey(btcec.S256())
 	if err != nil {
 		return "", err

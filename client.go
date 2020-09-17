@@ -3,13 +3,14 @@ package btcpay
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/shopspring/decimal"
 )
 
 // Client
 type Client struct {
-	http    *http.Client
+	hc      *http.Client
 	headers map[string]string
 }
 
@@ -17,12 +18,22 @@ type setter func(c *Client)
 
 func WithHTTPClient(hc *http.Client) setter {
 	return func(c *Client) {
-		c.http = hc
+		c.hc = hc
+	}
+}
+
+func WithUserAgent(ua string) setter {
+	return func(c *Client) {
+		c.headers["User-Agent"] = ua
 	}
 }
 
 func NewClient(ss ...setter) *Client {
-	c := &Client{}
+	c := &Client{
+		hc: &http.Client{
+			Timeout: time.Second * 20,
+		},
+	}
 
 	for _, s := range ss {
 		s(c)
@@ -31,7 +42,7 @@ func NewClient(ss ...setter) *Client {
 	return c
 }
 
-func (c *Client) send(req *http.Request) (*http.Response, error) {
+func (c *Client) send(req *http.Request, sign bool) (*http.Response, error) {
 	return nil, nil
 }
 

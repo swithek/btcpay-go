@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,7 +15,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Client
+// Client holds data that is needed to safely communicate with the
+// BTCPay server.
 type Client struct {
 	hc       *http.Client
 	headers  map[string]string
@@ -29,14 +32,14 @@ type Client struct {
 type setter func(c *Client)
 
 // WithHTTPClient sets a custom http client on the BTCPay client.
-func WithHTTPClient(hc *http.Client) setter {
+func WithHTTPClient(hc *http.Client) setter { //nolint:golint // setter funcs cannot be created outside of this package
 	return func(c *Client) {
 		c.hc = hc
 	}
 }
 
 // WithUserAgent sets a custom user agent string on the BTCPay client.
-func WithUserAgent(ua string) setter {
+func WithUserAgent(ua string) setter { //nolint:golint // setter funcs cannot be created outside of this package
 	return func(c *Client) {
 		c.headers["User-Agent"] = ua
 	}
@@ -44,23 +47,14 @@ func WithUserAgent(ua string) setter {
 
 // WithPEM sets a custom PEM string on the BTCPay client.
 // If not set, it will be generated automatically.
-func WithPEM(pm string) setter {
+func WithPEM(pm string) setter { //nolint:golint // setter funcs cannot be created outside of this package
 	return func(c *Client) {
 		c.pem = pm
 	}
 }
 
-// WithToken sets a custom token on the BTCPay client.
-// Pairing is not needed if token is provided.
-func WithToken(t string) setter {
-	return func(c *Client) {
-		c.token = t
-	}
-}
-
 // NewClient creates a fresh instance of BTCPay client.
-// Be sure to call Pair method after creation, if token is not provided.
-func NewClient(host string, ss ...setter) (*Client, error) {
+func NewClient(host, token string, ss ...setter) (*Client, error) {
 	c := &Client{
 		hc: &http.Client{
 			Timeout: time.Second * 20,
@@ -73,6 +67,7 @@ func NewClient(host string, ss ...setter) (*Client, error) {
 		},
 		host: host,
 	}
+	c.pairing.token = token
 
 	for _, s := range ss {
 		s(c)
@@ -95,7 +90,22 @@ func NewClient(host string, ss ...setter) (*Client, error) {
 	return c, nil
 }
 
-// send issues an HTTP request to the specified endpoint.
+// NewPairedClient creates a fresh instance of BTCPay client and pairs
+// it with the server.
+func NewPairedClient(host, code string, ss ...setter) (*Client, error) {
+	c, err := NewClient(host, "", ss...)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = c.pair(context.Background(), code); err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
+
+// send sends an HTTP request to the specified endpoint.
 func (c *Client) send(ctx context.Context, method, endpoint string, params url.Values, payload interface{}, sig bool) (*http.Response, error) {
 	c.pairing.RLock()
 	defer c.pairing.RUnlock()
@@ -132,8 +142,7 @@ func (c *Client) send(ctx context.Context, method, endpoint string, params url.V
 		}
 	}
 
-	reqURL := c.host + endpoint
-	req, err := http.NewRequestWithContext(ctx, method, reqURL, body)
+	req, err := http.NewRequestWithContext(ctx, method, c.host+endpoint, body)
 	if err != nil {
 		return nil, err
 	}
@@ -145,14 +154,14 @@ func (c *Client) send(ctx context.Context, method, endpoint string, params url.V
 	}
 
 	if sig {
-		pub, err := publicKey(c.pem)
+		pub, err := pubKey(c.pem)
 		if err != nil {
 			return nil, err
 		}
 
 		req.Header.Set("X-Identity", pub)
 
-		sig, err := sign(c.pem, reqURL+body.String())
+		sig, err := sign(c.pem, req.URL.String()+body.String())
 		if err != nil {
 			return nil, err
 		}
@@ -165,13 +174,26 @@ func (c *Client) send(ctx context.Context, method, endpoint string, params url.V
 		return nil, err
 	}
 
-	// TODO handle error response
+	if resp.StatusCode >= 400 {
+		defer resp.Body.Close()
+
+		var rerr struct {
+			Error string `json:"error"`
+		}
+
+		err = json.NewDecoder(resp.Body).Decode(&rerr)
+		if err != nil {
+			return nil, err
+		}
+
+		return nil, fmt.Errorf("[%d] %s", resp.StatusCode, rerr.Error)
+	}
 
 	return resp, nil
 }
 
-// Pair pairs the client with the payment processor.
-func (c *Client) Pair(ctx context.Context, code string) error {
+// pair pairs the client with the BTCPay server.
+func (c *Client) pair(ctx context.Context, code string) error {
 	data := struct {
 		ID          string `json:"id"`
 		PairingCode string `json:"pairingCode"`
@@ -187,16 +209,20 @@ func (c *Client) Pair(ctx context.Context, code string) error {
 
 	defer resp.Body.Close()
 
-	var token struct {
+	var tokens []struct {
 		Token string `json:"token"`
 	}
 
-	if err = json.NewDecoder(resp.Body).Decode(&token); err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&tokens); err != nil {
 		return err
 	}
 
+	if len(tokens) == 0 {
+		return errors.New("token data not returned")
+	}
+
 	c.pairing.Lock()
-	c.pairing.token = token.Token
+	c.pairing.token = tokens[0].Token
 	c.pairing.Unlock()
 
 	return nil
@@ -204,7 +230,7 @@ func (c *Client) Pair(ctx context.Context, code string) error {
 
 // Rates retrieves exchange rates for each crypto currency paired with
 // the provided fiat currency.
-// Store ID parameter is optional.
+// Store ID is optional.
 func (c *Client) Rates(ctx context.Context, currency, storeID string) (map[string]decimal.Decimal, error) {
 	var params url.Values
 	params.Set("cryptoCode", currency)
@@ -298,7 +324,8 @@ type Invoice struct {
 	OverpaidAmount      decimal.Decimal `json:"overpaidAmount"`
 }
 
-// CreateInvoice creates a new invoice by the provided creation parameters.
+// CreateInvoice creates a new invoice by the provided invoice
+// creation parameters.
 func (c *Client) CreateInvoice(ctx context.Context, p CreateInvoiceParams) (Invoice, error) {
 	resp, err := c.send(ctx, http.MethodPost, "/invoices", nil, p, true)
 	if err != nil {

@@ -13,6 +13,26 @@ import (
 	"golang.org/x/crypto/ripemd160"
 )
 
+// sign uses the private key in the PEM string to sign the provided value.
+func sign(pm, v string) (string, error) {
+	pk, err := privKey(pm)
+	if err != nil {
+		return "", err
+	}
+
+	hash := sha256.New()
+	if _, err = hash.Write([]byte(v)); err != nil {
+		return "", err
+	}
+
+	sig, err := pk.Sign(hash.Sum(nil))
+	if err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(sig.Serialize()), nil
+}
+
 // ecPrivateKey provides compatibility with the btcec package.
 type ecPrivateKey struct {
 	Version       int
@@ -48,7 +68,7 @@ func generatePEM() (string, error) {
 
 // generateSIN generates a SIN string from the provided PEM string.
 func generateSIN(pm string) (string, error) {
-	pk, err := privateKey(pm)
+	pk, err := privKey(pm)
 	if err != nil {
 		return "", err
 	}
@@ -87,26 +107,6 @@ func generateSIN(pm string) (string, error) {
 	return base58.Encode(bhx), nil
 }
 
-// sign uses the private key in the PEM string to sign the provided value.
-func sign(pm, v string) (string, error) {
-	pk, err := privateKey(pm)
-	if err != nil {
-		return "", err
-	}
-
-	hash := sha256.New()
-	if _, err = hash.Write([]byte(v)); err != nil {
-		return "", err
-	}
-
-	sig, err := pk.Sign(hash.Sum(nil))
-	if err != nil {
-		return "", err
-	}
-
-	return hex.EncodeToString(sig.Serialize()), nil
-}
-
 // hexHash hashes the provided value with the specified hashing algorithm
 // and returns its result in a hexadecimal format.
 func hexHash(hash hash.Hash, v string) (string, error) {
@@ -122,8 +122,8 @@ func hexHash(hash hash.Hash, v string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-// privateKey extracts a private key from the provided PEM string.
-func privateKey(pm string) (*btcec.PrivateKey, error) {
+// privKey extracts a private key from the provided PEM string.
+func privKey(pm string) (*btcec.PrivateKey, error) {
 	b, _ := pem.Decode([]byte(pm))
 
 	var ecpk ecPrivateKey
@@ -137,9 +137,9 @@ func privateKey(pm string) (*btcec.PrivateKey, error) {
 	return priv, nil
 }
 
-// publicKey extracts a compressed public key from the provided PEM string.
-func publicKey(pm string) (string, error) {
-	pk, err := privateKey(pm)
+// pubKey extracts a compressed public key from the provided PEM string.
+func pubKey(pm string) (string, error) {
+	pk, err := privKey(pm)
 	if err != nil {
 		return "", err
 	}

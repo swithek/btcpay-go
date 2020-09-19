@@ -5,6 +5,8 @@ go 1.15
 require (
 	github.com/btcsuite/btcd v0.21.0-beta.0.20200914143047-c693bd8bc510
 	github.com/btcsuite/btcutil v1.0.2
+	github.com/jarcoal/httpmock v1.0.6
 	github.com/shopspring/decimal v1.2.0
+	github.com/stretchr/testify v1.6.1
 	golang.org/x/crypto v0.0.0-20200510223506-06a226fb4e37
 )

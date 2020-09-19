@@ -1,7 +1,6 @@
 package btcpay
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -19,14 +17,11 @@ import (
 // BTCPay server.
 type Client struct {
 	hc       *http.Client
-	headers  map[string]string
+	header   map[string]string
 	host     string
 	pem      string
 	clientID string
-	pairing  struct {
-		sync.RWMutex
-		token string
-	}
+	token    string
 }
 
 type setter func(c *Client)
@@ -41,7 +36,7 @@ func WithHTTPClient(hc *http.Client) setter { //nolint:golint // setter funcs ca
 // WithUserAgent sets a custom user agent string on the BTCPay client.
 func WithUserAgent(ua string) setter { //nolint:golint // setter funcs cannot be created outside of this package
 	return func(c *Client) {
-		c.headers["User-Agent"] = ua
+		c.header["User-Agent"] = ua
 	}
 }
 
@@ -59,15 +54,15 @@ func NewClient(host, token string, ss ...setter) (*Client, error) {
 		hc: &http.Client{
 			Timeout: time.Second * 20,
 		},
-		headers: map[string]string{
+		header: map[string]string{
 			"Content-Type":     "application/json",
 			"Accept":           "application/json",
 			"X-Accept-Version": "2.0.0",
 			"User-Agent":       "btcpay-go",
 		},
-		host: host,
+		host:  host,
+		token: token,
 	}
-	c.pairing.token = token
 
 	for _, s := range ss {
 		s(c)
@@ -107,49 +102,57 @@ func NewPairedClient(host, code string, ss ...setter) (*Client, error) {
 
 // send sends an HTTP request to the specified endpoint.
 func (c *Client) send(ctx context.Context, method, endpoint string, params url.Values, payload interface{}, sig bool) (*http.Response, error) {
-	c.pairing.RLock()
-	defer c.pairing.RUnlock()
-
 	var (
-		body  *bytes.Buffer
+		body  string
 		query strings.Builder // query params order is important
 	)
 
 	if payload != nil {
-		type pl interface{}
-
-		body = &bytes.Buffer{}
-		data := struct {
-			pl
-			Token string `json:"token,omitempty"`
-		}{pl: payload, Token: c.pairing.token}
-
-		if err := json.NewEncoder(body).Encode(data); err != nil {
+		d, err := json.Marshal(payload)
+		if err != nil {
 			return nil, err
 		}
-	} else {
-		if c.pairing.token != "" {
-			query.WriteString("token=")
-			query.WriteString(c.pairing.token)
-		}
 
-		if len(params) > 0 {
-			if query.Len() > 0 {
-				query.WriteByte('&')
+		if c.token != "" {
+			m := make(map[string]interface{})
+			if err = json.Unmarshal(d, &m); err != nil {
+				// unlikely to happen
+				return nil, err
 			}
 
-			query.WriteString(params.Encode())
+			m["token"] = c.token
+
+			d, err = json.Marshal(m)
+			if err != nil {
+				// unlikely to happen
+				return nil, err
+			}
+		}
+
+		body = string(d)
+	} else {
+		if c.token != "" {
+			query.WriteString("token=")
+			query.WriteString(c.token)
 		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.host+endpoint, body)
+	if len(params) > 0 {
+		if query.Len() > 0 {
+			query.WriteByte('&')
+		}
+
+		query.WriteString(params.Encode())
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.host+endpoint, strings.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 
 	req.URL.RawQuery = query.String()
 
-	for k, v := range c.headers {
+	for k, v := range c.header {
 		req.Header.Set(k, v)
 	}
 
@@ -161,7 +164,7 @@ func (c *Client) send(ctx context.Context, method, endpoint string, params url.V
 
 		req.Header.Set("X-Identity", pub)
 
-		sig, err := sign(c.pem, req.URL.String()+body.String())
+		sig, err := sign(c.pem, req.URL.String()+body)
 		if err != nil {
 			return nil, err
 		}
@@ -221,9 +224,7 @@ func (c *Client) pair(ctx context.Context, code string) error {
 		return errors.New("token data not returned")
 	}
 
-	c.pairing.Lock()
-	c.pairing.token = tokens[0].Token
-	c.pairing.Unlock()
+	c.token = tokens[0].Token
 
 	return nil
 }

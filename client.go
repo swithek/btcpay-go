@@ -119,7 +119,6 @@ func (c *Client) send(ctx context.Context, method, endpoint string, params url.V
 				return nil, err
 			}
 
-			fmt.Println(m)
 			m["token"] = c.token
 
 			d, err = json.Marshal(m)

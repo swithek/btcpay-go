@@ -116,10 +116,10 @@ func (c *Client) send(ctx context.Context, method, endpoint string, params url.V
 		if c.token != "" {
 			m := make(map[string]interface{})
 			if err = json.Unmarshal(d, &m); err != nil {
-				// unlikely to happen
 				return nil, err
 			}
 
+			fmt.Println(m)
 			m["token"] = c.token
 
 			d, err = json.Marshal(m)
@@ -227,43 +227,6 @@ func (c *Client) pair(ctx context.Context, code string) error {
 	c.token = tokens[0].Token
 
 	return nil
-}
-
-// Rates retrieves exchange rates for each crypto currency paired with
-// the provided fiat currency.
-// Store ID is optional.
-func (c *Client) Rates(ctx context.Context, currency, storeID string) (map[string]decimal.Decimal, error) {
-	var params url.Values
-	params.Set("cryptoCode", currency)
-
-	if storeID != "" {
-		params.Set("storeID", storeID)
-	}
-
-	resp, err := c.send(ctx, http.MethodGet, "/rates", params, nil, true)
-	if err != nil {
-		return nil, err
-	}
-
-	defer resp.Body.Close()
-
-	var rates struct {
-		Data []struct {
-			Code string          `json:"code"`
-			Rate decimal.Decimal `json:"rate"`
-		} `json:"data"`
-	}
-
-	if err = json.NewDecoder(resp.Body).Decode(&rates); err != nil {
-		return nil, err
-	}
-
-	rr := make(map[string]decimal.Decimal, len(rates.Data))
-	for _, r := range rates.Data {
-		rr[r.Code] = r.Rate
-	}
-
-	return rr, nil
 }
 
 // CreateInvoiceParams holds data used to initialize a new invoice.

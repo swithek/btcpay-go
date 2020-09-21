@@ -71,7 +71,7 @@ func NewClient(host, token string, ss ...setter) (*Client, error) {
 	var err error
 
 	if c.pem == "" {
-		c.pem, err = generatePEM()
+		c.pem, err = GeneratePEM()
 		if err != nil {
 			return nil, err
 		}
@@ -98,6 +98,11 @@ func NewPairedClient(host, code string, ss ...setter) (*Client, error) {
 	}
 
 	return c, nil
+}
+
+// Token returns the active token used by the client.
+func (c *Client) Token() string {
+	return c.token
 }
 
 // send sends an HTTP request to the specified endpoint.

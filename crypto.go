@@ -38,11 +38,11 @@ type ecPrivateKey struct {
 	Version       int
 	PrivateKey    []byte
 	NamedCurveOID asn1.ObjectIdentifier `asn1:"optional,explicit,tag:0"`
-	PublicKey     asn1.BitString        `asn1:"optional,explicit,tag1"`
+	PublicKey     asn1.BitString        `asn1:"optional,explicit,tag:1"`
 }
 
-// generatePEM generates a new PEM string.
-func generatePEM() (string, error) {
+// GeneratePEM generates a new PEM string.
+func GeneratePEM() (string, error) {
 	priv, err := btcec.NewPrivateKey(btcec.S256())
 	if err != nil {
 		return "", err

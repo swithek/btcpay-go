@@ -62,6 +62,11 @@ func Test_NewPairedClient(t *testing.T) {
 	assert.Equal(t, "123", c.token)
 }
 
+func Test_Client_Token(t *testing.T) {
+	c := &Client{token: "123"}
+	assert.Equal(t, "123", c.Token())
+}
+
 func Test_Client_send(t *testing.T) {
 	checkHeader := func(h http.Header, sig bool) error {
 		if h.Get("Content-Type") != "application/json" ||

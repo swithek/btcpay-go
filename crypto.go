@@ -6,6 +6,7 @@ import (
 	"encoding/asn1"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"hash"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -125,6 +126,9 @@ func hexHash(hash hash.Hash, v string) (string, error) {
 // privKey extracts a private key from the provided PEM string.
 func privKey(pm string) (*btcec.PrivateKey, error) {
 	b, _ := pem.Decode([]byte(pm))
+	if b == nil {
+		return nil, errors.New("private key not found")
+	}
 
 	var ecpk ecPrivateKey
 
